@@ -219,6 +219,20 @@ export default function Page() {
   const [currentUrl, setCurrentUrl] = useState('')
 
   useEffect(() => {
+    // Check if app is running in standalone mode (installed PWA)
+    const isStandalone = 
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as any).standalone === true ||
+      document.referrer.includes('android-app://')
+
+    if (isStandalone) {
+      // Redirect to Google.com when app is opened in standalone mode
+      // Use replace to avoid adding to browser history
+      window.location.replace('https://google.com')
+      return
+    }
+
+    // Only set URL if not in standalone mode
     setCurrentUrl(window.location.href)
   }, [])
 
