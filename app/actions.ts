@@ -8,7 +8,7 @@ webpush.setVapidDetails(
     process.env.VAPID_PRIVATE_KEY!
 )
 
-let subscription: PushSubscription | null = null
+let subscription: any
 
 export async function subscribeUser(sub: PushSubscription) {
     subscription = sub
