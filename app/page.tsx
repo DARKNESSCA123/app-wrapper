@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import QRCode from 'react-qr-code'
+import { subscribeUser, unsubscribeUser, sendNotification } from './actions'
 
 // App information data structure (easy to replace later)
 const appInfo = {
@@ -27,6 +28,212 @@ Nhưng chiến thắng cuối cùng chưa chắc thuộc về bạn.`,
     2: 1,
     1: 1,
   },
+}
+
+// Helper function to convert VAPID key
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = window.atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i)
+  }
+  return outputArray
+}
+
+function PushNotificationManager() {
+  const [isSupported, setIsSupported] = useState(false)
+  const [subscription, setSubscription] = useState<PushSubscription | null>(null)
+  const [isSubscribing, setIsSubscribing] = useState(false)
+  const [isSending, setIsSending] = useState(false)
+  const [notificationMessage, setNotificationMessage] = useState('Xin chào! Đây là thông báo test từ ứng dụng.')
+
+  useEffect(() => {
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      setIsSupported(true)
+      checkSubscription()
+    }
+  }, [])
+
+  async function checkSubscription() {
+    try {
+      const registration = await navigator.serviceWorker.ready
+      const sub = await registration.pushManager.getSubscription()
+      setSubscription(sub)
+    } catch (error) {
+      console.error('Error checking subscription:', error)
+    }
+  }
+
+  async function subscribeToPush() {
+    if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+      alert('VAPID key chưa được cấu hình. Vui lòng kiểm tra biến môi trường NEXT_PUBLIC_VAPID_PUBLIC_KEY')
+      return
+    }
+
+    setIsSubscribing(true)
+    try {
+      const registration = await navigator.serviceWorker.ready
+      const permission = await Notification.requestPermission()
+      
+      if (permission !== 'granted') {
+        alert('Bạn cần cho phép thông báo để sử dụng tính năng này.')
+        setIsSubscribing(false)
+        return
+      }
+
+      const sub = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY),
+      })
+      
+      setSubscription(sub)
+      const serializedSub = JSON.parse(JSON.stringify(sub))
+      await subscribeUser(serializedSub)
+      alert('Đã đăng ký nhận thông báo thành công!')
+    } catch (error) {
+      console.error('Error subscribing:', error)
+      alert('Lỗi khi đăng ký thông báo: ' + (error as Error).message)
+    } finally {
+      setIsSubscribing(false)
+    }
+  }
+
+  async function unsubscribeFromPush() {
+    try {
+      if (subscription) {
+        await subscription.unsubscribe()
+        setSubscription(null)
+        await unsubscribeUser()
+        alert('Đã hủy đăng ký thông báo thành công!')
+      }
+    } catch (error) {
+      console.error('Error unsubscribing:', error)
+      alert('Lỗi khi hủy đăng ký thông báo')
+    }
+  }
+
+  async function sendTestNotification() {
+    if (!subscription) {
+      alert('Vui lòng đăng ký nhận thông báo trước!')
+      return
+    }
+
+    setIsSending(true)
+    try {
+      await sendNotification(notificationMessage || 'Test notification')
+      alert('Đã gửi thông báo test thành công!')
+    } catch (error) {
+      console.error('Error sending notification:', error)
+      alert('Lỗi khi gửi thông báo: ' + (error as Error).message)
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  if (!isSupported) {
+    return (
+      <div className="bg-[#1a1a1a] rounded-lg p-4 border border-gray-700">
+        <p className="text-gray-400 text-sm">Trình duyệt của bạn không hỗ trợ Push Notifications.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-[#1a1a1a] rounded-lg p-6 border border-gray-700">
+      <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+        </svg>
+        Push Notifications
+      </h3>
+      
+      {subscription ? (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 text-green-400">
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+            <span className="text-sm font-medium">Đã đăng ký nhận thông báo</span>
+          </div>
+          
+          <div>
+            <label className="block text-sm text-gray-300 mb-2">
+              Nội dung thông báo test:
+            </label>
+            <input
+              type="text"
+              value={notificationMessage}
+              onChange={(e) => setNotificationMessage(e.target.value)}
+              placeholder="Nhập nội dung thông báo..."
+              className="w-full bg-[#0a0a0a] border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
+            />
+          </div>
+          
+          <div className="flex gap-3">
+            <button
+              onClick={sendTestNotification}
+              disabled={isSending}
+              className="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {isSending ? (
+                <>
+                  <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Đang gửi...
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                  Gửi Test Notification
+                </>
+              )}
+            </button>
+            
+            <button
+              onClick={unsubscribeFromPush}
+              className="px-4 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 rounded-lg transition-colors"
+            >
+              Hủy đăng ký
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-gray-400 text-sm">
+            Đăng ký để nhận thông báo đẩy từ ứng dụng.
+          </p>
+          <button
+            onClick={subscribeToPush}
+            disabled={isSubscribing}
+            className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {isSubscribing ? (
+              <>
+                <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Đang đăng ký...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                </svg>
+                Đăng ký nhận thông báo
+              </>
+            )}
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function InstallButton() {
@@ -220,17 +427,17 @@ export default function Page() {
 
   useEffect(() => {
     // Check if app is running in standalone mode (installed PWA)
-    const isStandalone = 
-      window.matchMedia('(display-mode: standalone)').matches ||
-      (window.navigator as any).standalone === true ||
-      document.referrer.includes('android-app://')
+    // const isStandalone = 
+    //   window.matchMedia('(display-mode: standalone)').matches ||
+    //   (window.navigator as any).standalone === true ||
+    //   document.referrer.includes('android-app://')
 
-    if (isStandalone) {
-      // Redirect to Google.com when app is opened in standalone mode
-      // Use replace to avoid adding to browser history
-      window.location.replace('https://google.com')
-      return
-    }
+    // if (isStandalone) {
+    //   // Redirect to Google.com when app is opened in standalone mode
+    //   // Use replace to avoid adding to browser history
+    //   window.location.replace('https://google.com')
+    //   return
+    // }
 
     // Only set URL if not in standalone mode
     setCurrentUrl(window.location.href)
@@ -549,6 +756,11 @@ export default function Page() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Push Notification Section */}
+        <div className="mb-8">
+          <PushNotificationManager />
         </div>
       </div>
     </div>
