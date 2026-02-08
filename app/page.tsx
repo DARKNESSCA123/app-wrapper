@@ -48,11 +48,52 @@ function PushNotificationManager() {
   const [isSubscribing, setIsSubscribing] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [notificationMessage, setNotificationMessage] = useState('Xin chào! Đây là thông báo test từ ứng dụng.')
+  const [browserInfo, setBrowserInfo] = useState<{ name: string; isIOS: boolean; isSafari: boolean } | null>(null)
 
   useEffect(() => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
+    // Detect browser and platform
+    const userAgent = navigator.userAgent
+    const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream
+    const isSafari = /^((?!chrome|android).)*safari/i.test(userAgent)
+    const isChrome = /Chrome/.test(userAgent) && !/Edg/.test(userAgent)
+    const isEdge = /Edg/.test(userAgent)
+    const isFirefox = /Firefox/.test(userAgent)
+    
+    // On iOS, all browsers use WebKit engine and don't support Web Push API
+    // This includes Chrome, Edge, Firefox, Safari - all are limited by iOS WebKit
+    let browserName = 'Other'
+    if (isIOS) {
+      if (isSafari) browserName = 'Safari (iOS)'
+      else if (isChrome) browserName = 'Chrome (iOS)'
+      else if (isEdge) browserName = 'Edge (iOS)'
+      else if (isFirefox) browserName = 'Firefox (iOS)'
+      else browserName = 'Browser (iOS)'
+    } else {
+      if (isSafari) browserName = 'Safari (macOS)'
+      else if (isChrome) browserName = 'Chrome'
+      else if (isEdge) browserName = 'Edge'
+      else if (isFirefox) browserName = 'Firefox'
+    }
+    
+    setBrowserInfo({
+      name: browserName,
+      isIOS,
+      isSafari: !!isSafari
+    })
+
+    // Check support
+    const hasServiceWorker = 'serviceWorker' in navigator
+    const hasPushManager = 'PushManager' in window
+    
+    // Important: On iOS, ALL browsers (Chrome, Edge, Firefox, Safari) use WebKit
+    // and do NOT support Web Push API due to iOS restrictions
+    // Only Safari on macOS 16+ supports Web Push API
+    if (hasServiceWorker && hasPushManager && !isIOS) {
       setIsSupported(true)
       checkSubscription()
+    } else if (isIOS) {
+      // All iOS browsers don't support Web Push API
+      setIsSupported(false)
     }
   }, [])
 
@@ -133,9 +174,67 @@ function PushNotificationManager() {
   }
 
   if (!isSupported) {
+    const isIOSDevice = browserInfo?.isIOS
+    
     return (
-      <div className="bg-[#1a1a1a] rounded-lg p-4 border border-gray-700">
-        <p className="text-gray-400 text-sm">Trình duyệt của bạn không hỗ trợ Push Notifications.</p>
+      <div className="bg-[#1a1a1a] rounded-lg p-6 border border-gray-700">
+        <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+          </svg>
+          Push Notifications v2
+        </h3>
+        
+        {isIOSDevice ? (
+          <div className="space-y-3">
+            <div className="flex items-start gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+              <svg className="w-5 h-5 text-yellow-400 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <div className="flex-1">
+                <p className="text-yellow-400 font-semibold mb-2">
+                  Tất cả trình duyệt trên iOS không hỗ trợ Web Push Notifications
+                </p>
+                <p className="text-gray-400 text-sm mb-3">
+                  Trên iOS, Apple yêu cầu tất cả trình duyệt (bao gồm Chrome, Edge, Firefox, Safari) phải sử dụng WebKit engine. 
+                  WebKit trên iOS <strong>không hỗ trợ Web Push API</strong> do hạn chế của hệ điều hành.
+                </p>
+                <div className="bg-[#0a0a0a] rounded p-3 mb-3">
+                  <p className="text-gray-300 text-sm font-medium mb-2">Trình duyệt hiện tại: <span className="text-yellow-400">{browserInfo?.name}</span></p>
+                  <p className="text-gray-400 text-xs">
+                    Ngay cả Chrome, Edge, Firefox trên iOS cũng không hỗ trợ Web Push API vì chúng đều chạy trên WebKit.
+                  </p>
+                </div>
+                <div className="text-gray-400 text-sm">
+                  <p className="font-medium mb-2 text-gray-300">Giải pháp thay thế:</p>
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li>Sử dụng Safari trên macOS (phiên bản 16 trở lên) - hỗ trợ đầy đủ</li>
+                    <li>Sử dụng Chrome/Edge/Firefox trên Android hoặc Desktop</li>
+                    <li>Cài đặt ứng dụng PWA và sử dụng native notifications (nếu có)</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-gray-400 text-sm">
+              Trình duyệt của bạn không hỗ trợ Push Notifications.
+            </p>
+            <div className="text-sm text-gray-500">
+              <p className="mb-2">Push Notifications được hỗ trợ trên:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>Chrome (Desktop & Android)</li>
+                <li>Edge (Desktop & Android)</li>
+                <li>Firefox (Desktop & Android)</li>
+                <li>Safari trên macOS (từ phiên bản 16+)</li>
+              </ul>
+              <p className="mt-3 text-yellow-400 text-xs">
+                ⚠️ Lưu ý: Tất cả trình duyệt trên iOS (bao gồm Chrome, Edge, Firefox) đều không hỗ trợ Web Push API.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
